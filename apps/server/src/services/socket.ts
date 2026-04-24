@@ -1,21 +1,27 @@
+import dotenv from "dotenv";
+dotenv.config();
 import { Server } from "socket.io";
 import * as IORedis from "ioredis";
-import {} from 'dotenv'
+
+
+console.log(process.env.PORT);
 
 const pub = new IORedis.Redis({
     host: process.env.HOST,
-    port: Intl(process.env.PORT),
+    port: Number(process.env.PORT),
     username: process.env.USERNAME,
-    password: process.env.PASSWORD
+    password: process.env.PASSWORD,
+    tls: {}
 });
 
 
 
 const sub = new IORedis.Redis({
     host: process.env.HOST,
-    port: Intl(process.env.PORT),
+    port: Number(process.env.PORT),
     username: process.env.USERNAME,
-    password: process.env.PASSWORD
+    password: process.env.PASSWORD,
+    tls: {}
 });
 
 class SocketService {

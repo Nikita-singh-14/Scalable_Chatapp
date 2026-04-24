@@ -12,3 +12,15 @@
   padding: 10px;
   border-radius: 10px; 
 }
+.main-class {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+.first-class {
+  margin: 2rem;
+  display: block;
+  align-items: center;
+  gap: 2rem;
+
+}
