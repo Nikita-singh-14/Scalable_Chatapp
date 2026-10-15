@@ -1,159 +1,288 @@
-# Turborepo starter
+# Scalable Chat App with Redis Pub/Sub
 
-This Turborepo starter is maintained by the Turborepo core team.
+This project is a small real-time chat application built to help you understand how Redis pub/sub works in a real application.
 
-## Using this example
+The app uses:
 
-Run the following command:
+- Next.js for the frontend
+- Socket.IO for real-time client-server communication
+- Redis Pub/Sub to broadcast messages between server instances or processes
+- TypeScript for clean code
+- Turborepo monorepo structure for splitting frontend and backend code
 
-```sh
-npx create-turbo@latest
+This repo is intentionally simple, so you can focus on the core pattern instead of a large production system.
+
+## What this project demonstrates
+
+The main learning goal is this flow:
+
+1. A user sends a message from the browser
+2. The frontend emits a Socket.IO event
+3. The server receives that message
+4. The server publishes the message to a Redis channel
+5. Redis fans it out to all subscribers on that channel
+6. Every connected server instance receives the message
+7. The server broadcasts it back to connected clients
+
+This is the same idea behind many real-time systems such as:
+
+- chat apps
+- live dashboards
+- notifications
+- event-driven microservices
+
+## Architecture
+
+```text
+Browser Client 1            Browser Client 2
+      |                           |
+      |-- Socket.IO message ---->|
+      |                           |
+      v                           v
+        Web app (Next.js)
+             |
+             | send via Socket.IO
+             v
+        Node.js server
+             |
+             | publish to Redis channel: MESSAGES
+             v
+        Redis Pub/Sub
+             |
+             | subscriber receives event
+             v
+        Node.js server
+             |
+             | emit to connected browser clients
+             v
+        Browser Client 1 / Client 2
 ```
 
-## What's inside?
+## Important concept: Redis Pub/Sub
 
-This Turborepo includes the following packages/apps:
+Redis Pub/Sub is a messaging pattern where:
 
-### Apps and Packages
+- publishers send messages to a channel
+- subscribers listen to that channel
+- Redis immediately delivers the message to all subscribers
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+It is not persistent storage like a queue.
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
+That means:
 
-### Utilities
+- if no subscriber is listening, the message is lost
+- it is optimized for real-time broadcasting, not durable jobs
 
-This Turborepo has some additional tools already setup for you:
+In this project, the channel name is:
 
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
+```text
+MESSAGES
 ```
 
-Without global `turbo`, use your package manager:
+The flow is:
 
-```sh
-cd my-turborepo
-npx turbo build
-yarn dlx turbo build
-pnpm exec turbo build
+```ts
+await pub.publish("MESSAGES", JSON.stringify({ message }));
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+Then on the subscriber side:
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo build --filter=docs
+```ts
+sub.on("message", (channel, message) => {
+  if (channel === "MESSAGES") {
+    io.emit("message", message);
+  }
+});
 ```
 
-Without global `turbo`:
+This means the server publishes a message to Redis, and every active subscriber on that channel receives it.
 
-```sh
-npx turbo build --filter=docs
-yarn exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
+## Project structure
+
+```text
+scalable-Chatapp/
+├── apps/
+│   ├── web/               # Next.js frontend
+│   │   ├── app/
+│   │   └── context/
+│   └── server/            # Node.js + Socket.IO + Redis server
+│       └── src/
+├── packages/
+│   ├── ui/
+│   ├── eslint-config/
+│   └── typescript-config/
+├── package.json
+├── turbo.json
+├── README.md
+└── .gitignore
 ```
 
-### Develop
+## How the real-time chat works
 
-To develop all apps and packages, run the following command:
+### 1. Frontend: sending a message
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+In the web app, the client uses Socket.IO:
 
-```sh
-cd my-turborepo
-turbo dev
+```ts
+socket.emit("event:message", { message: msg });
 ```
 
-Without global `turbo`, use your package manager:
+This sends the message to the backend server.
 
-```sh
-cd my-turborepo
-npx turbo dev
-yarn exec turbo dev
-pnpm exec turbo dev
+### 2. Server: receive the message
+
+The server listens for the event:
+
+```ts
+socket.on("event:message", async ({ message }) => {
+  await pub.publish("MESSAGES", JSON.stringify({ message }));
+});
 ```
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+The message is serialized as JSON and sent to Redis.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+### 3. Redis: broadcast to subscribers
 
-```sh
-turbo dev --filter=web
+Redis receives the event on the `MESSAGES` channel and delivers it to all subscribers.
+
+### 4. Server: fan out to all connected clients
+
+The subscriber listens and then does:
+
+```ts
+io.emit("message", message);
 ```
 
-Without global `turbo`:
+This sends the message to every connected browser tab or client.
 
-```sh
-npx turbo dev --filter=web
-yarn exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
+## Why not just use Socket.IO alone?
+
+You can build a chat app using only Socket.IO, but Redis Pub/Sub becomes useful when:
+
+- you have multiple server instances
+- you need cross-instance communication
+- you want to scale horizontally
+- you want a lightweight event bus for real-time events
+
+In other words, Socket.IO handles browser connections, while Redis Pub/Sub helps servers communicate with each other.
+
+## Prerequisites
+
+Before running this app, make sure you have:
+
+- Node.js 18 or newer
+- Yarn (this repo is configured for Yarn workspaces)
+- A Redis instance available
+- Basic familiarity with terminal commands
+
+## Installation
+
+From the project root:
+
+```bash
+yarn install
 ```
 
-### Remote Caching
+## Environment variables
 
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
+The server expects Redis connection values in environment variables such as:
 
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
+```bash
+HOST=your-redis-host
+PORT=6380
+USERNAME=your-username
+PASSWORD=your-password
 ```
 
-Without global `turbo`, use your package manager:
+If you are using a local Redis instance, you may need to adjust the connection setup for non-TLS mode. In this project, the Redis connection is currently configured with `tls: {}` in the server code, which is typical for managed Redis services.
 
-```sh
-cd my-turborepo
-npx turbo login
-yarn exec turbo login
-pnpm exec turbo login
+## Run the app
+
+Start the server:
+
+```bash
+cd apps/server
+yarn dev
 ```
 
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
+Start the web app:
 
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
+```bash
+cd apps/web
+yarn dev
 ```
 
-Without global `turbo`:
+Then open:
 
-```sh
-npx turbo link
-yarn exec turbo link
-pnpm exec turbo link
+```text
+http://localhost:3000
 ```
 
-## Useful Links
+## Learn by tracing one message
 
-Learn more about the power of Turborepo:
+Try this simple exercise:
 
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+1. Open the app in two browser tabs
+2. Send a message from tab 1
+3. Watch the message appear in tab 2
+4. Trace the flow:
+   - browser -> Socket.IO
+   - server -> Redis publish
+   - Redis -> server subscriber
+   - server -> browser
+
+This is the exact pattern used in many real-time chat and notification systems.
+
+## Real-world notes
+
+This project is a teaching example, not a complete production chat service. A production app would usually also need:
+
+- user authentication
+- room-based chat channels
+- message persistence in a database
+- message history loading
+- rate limiting and spam protection
+- Redis Streams or database storage for durable messages
+- proper error handling and reconnect logic
+
+## Common Redis Pub/Sub ideas to learn
+
+- Channel = topic or event stream
+- Publisher = sender of data
+- Subscriber = listener for updates
+- Broadcast = Redis sends to all subscribers
+- Decoupled architecture = producers and consumers do not need to know each other directly
+
+## Useful learning links
+
+- Redis Pub/Sub docs: https://redis.io/docs/latest/develop/use/pubsub/
+- Socket.IO docs: https://socket.io/docs/v4/
+- Next.js docs: https://nextjs.org/docs
+
+## Summary
+
+This project is a beginner-friendly example of how real-time communication can be built using:
+
+- Socket.IO for browser communication
+- Redis Pub/Sub for event broadcasting
+- Node.js for the backend
+- Next.js for the frontend
+
+If you understand this project, you already understand the key idea behind many modern real-time apps.
+
+## Next step ideas
+
+Once you are comfortable, you can extend this app with:
+
+- private rooms
+- chat history storage
+- typing indicators
+- online user lists
+- Redis Streams for durable message processing
+- multiple microservice producers/consumers
+
+If you want, I can also help you write:
+
+- a beginner-friendly explanation of each file in this repo
+- a step-by-step Redis Pub/Sub flow diagram
+- a version of this app with local Redis setup for easier learning
