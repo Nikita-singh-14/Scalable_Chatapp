@@ -58,6 +58,12 @@ Browser Client 1            Browser Client 2
         Browser Client 1 / Client 2
 ```
 
+## Message history and Redis Streams
+
+New chat messages are saved in the Redis Stream `CHAT_MESSAGES` before they are broadcast. The stream retains the latest 10,000 messages. After login, the web app requests the most recent 50 messages from the authenticated `GET /api/messages` endpoint; users can load older messages in additional pages. Redis Stream IDs are used as cursors and to de-duplicate messages that arrive while history is loading.
+
+Messages sent before stream persistence was deployed are not available in history. History durability depends on the Redis provider's persistence and retention settings.
+
 ## Important concept: Redis Pub/Sub
 
 Redis Pub/Sub is a messaging pattern where:
@@ -66,12 +72,9 @@ Redis Pub/Sub is a messaging pattern where:
 - subscribers listen to that channel
 - Redis immediately delivers the message to all subscribers
 
-It is not persistent storage like a queue.
+It is not persistent storage: if no subscriber is listening, a published event is lost. This project uses a Redis Stream for history and Pub/Sub only for live delivery between server instances.
 
-That means:
-
-- if no subscriber is listening, the message is lost
-- it is optimized for real-time broadcasting, not durable jobs
+Pub/Sub is optimized for real-time broadcasting, not durable jobs.
 
 In this project, the channel name is:
 
@@ -79,10 +82,11 @@ In this project, the channel name is:
 MESSAGES
 ```
 
-The flow is:
+The live delivery flow is:
 
 ```ts
-await pub.publish("MESSAGES", JSON.stringify({ message }));
+await pub.xadd("CHAT_MESSAGES", "MAXLEN", "10000", "*", ...fields);
+await pub.publish("MESSAGES", JSON.stringify(chatMessage));
 ```
 
 Then on the subscriber side:
@@ -95,7 +99,7 @@ sub.on("message", (channel, message) => {
 });
 ```
 
-This means the server publishes a message to Redis, and every active subscriber on that channel receives it.
+The stream keeps messages for history, while Pub/Sub delivers each new message to active server instances.
 
 ## Project structure
 
@@ -129,21 +133,22 @@ socket.emit("event:message", { message: msg });
 
 This sends the message to the backend server.
 
-### 2. Server: receive the message
+### 2. Server: persist and publish the message
 
 The server listens for the event:
 
 ```ts
 socket.on("event:message", async ({ message }) => {
-  await pub.publish("MESSAGES", JSON.stringify({ message }));
+  const id = await pub.xadd("CHAT_MESSAGES", "MAXLEN", "10000", "*", ...fields);
+  await pub.publish("MESSAGES", JSON.stringify({ id, username, message, sentAt }));
 });
 ```
 
-The message is serialized as JSON and sent to Redis.
+The message is first saved in the history stream, then published for live delivery.
 
-### 3. Redis: broadcast to subscribers
+### 3. Redis: retain history and broadcast to subscribers
 
-Redis receives the event on the `MESSAGES` channel and delivers it to all subscribers.
+Redis retains the message in `CHAT_MESSAGES` and delivers the Pub/Sub event on `MESSAGES` to all active subscribers.
 
 ### 4. Server: fan out to all connected clients
 
@@ -154,6 +159,10 @@ io.emit("message", message);
 ```
 
 This sends the message to every connected browser tab or client.
+
+### 5. Restore history after refresh
+
+After login, the browser calls the authenticated `GET /api/messages` endpoint to load recent messages from the stream. Older messages are fetched using the stream ID of the oldest loaded message as a cursor.
 
 ## Why not just use Socket.IO alone?
 

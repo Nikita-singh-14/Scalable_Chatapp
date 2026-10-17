@@ -8,6 +8,8 @@ const REDIS_HOST = process.env.REDIS_HOST || "localhost";
 const REDIS_PORT = Number(process.env.REDIS_PORT || 6379);
 const REDIS_USERNAME = process.env.REDIS_USERNAME;
 const REDIS_PASSWORD = process.env.REDIS_PASSWORD;
+const MESSAGE_STREAM = "CHAT_MESSAGES";
+const MAX_STORED_MESSAGES = 10_000;
 
 const redisOptions = {
     host: REDIS_HOST,
@@ -35,6 +37,18 @@ const sub = (() => {
         return null;
     }
 })();
+
+export interface ChatMessage {
+    id: string;
+    username: string;
+    message: string;
+    sentAt: number;
+}
+
+export interface ChatMessagePage {
+    messages: ChatMessage[];
+    hasMore: boolean;
+}
 
 pub?.on("error", (error) => {
     console.warn("Redis publish client error:", error.message);
@@ -67,6 +81,43 @@ class SocketService {
         }
     }
 
+    public async getRecentMessages(limit: number, before?: string): Promise<ChatMessagePage> {
+        if (!pub) {
+            throw new Error("Redis is not configured.");
+        }
+
+        const entries = before
+            ? await pub.xrevrange(MESSAGE_STREAM, `(${before}`, "-", "COUNT", limit + 1)
+            : await pub.xrevrange(MESSAGE_STREAM, "+", "-", "COUNT", limit + 1);
+        const hasMore = entries.length > limit;
+        const messages = entries
+            .slice(0, limit)
+            .reverse()
+            .map(([id, fields]) => {
+                const values = new Map<string, string>();
+                for (let index = 0; index < fields.length; index += 2) {
+                    const key = fields[index];
+                    const value = fields[index + 1];
+                    if (key !== undefined && value !== undefined) {
+                        values.set(key, value);
+                    }
+                }
+
+                return {
+                    id,
+                    username: values.get("username") ?? "Unknown sender",
+                    message: values.get("message") ?? "",
+                    sentAt: Number(values.get("sentAt")),
+                };
+            })
+            .filter((message) =>
+                message.message.length > 0 &&
+                Number.isFinite(message.sentAt)
+            );
+
+        return { messages, hasMore };
+    }
+
     public initListener() {
         const io = this.io;
         console.log("Init Socket Listeners...");
@@ -90,26 +141,55 @@ class SocketService {
         io.on("connect", (socket) => {
             console.log(`New Socket Connected`, socket.id, "user:", socket.data.user);
 
-            socket.on("event:message", async ({ message }: { message: string }) => {
-                if (!message || !String(message).trim()) {
+            socket.on("event:message", async (payload: { message?: unknown } | null) => {
+                const message = payload?.message;
+                if (typeof message !== "string" || !message.trim()) {
                     return;
                 }
 
-                console.log("New Message Rec.", message);
-                const chatMessage = JSON.stringify({
-                    username: socket.data.user,
-                    message: String(message).trim(),
-                    sentAt: Date.now(),
-                });
+                if (!pub) {
+                    socket.emit("message:error", "Chat history is unavailable because Redis is not configured.");
+                    return;
+                }
 
-                if (pub) {
-                    try {
-                        await pub.publish("MESSAGES", chatMessage);
-                    } catch (error) {
-                        console.warn("Redis message publish failed:", error instanceof Error ? error.message : "Unknown Redis error");
+                const sentAt = Date.now();
+                let id: string;
+                try {
+                    const messageId = await pub.xadd(
+                        MESSAGE_STREAM,
+                        "MAXLEN",
+                        String(MAX_STORED_MESSAGES),
+                        "*",
+                        "username",
+                        socket.data.user,
+                        "message",
+                        message.trim(),
+                        "sentAt",
+                        String(sentAt)
+                    );
+                    if (!messageId) {
+                        throw new Error("Redis did not return a message ID.");
                     }
-                } else {
-                    io.emit("message", chatMessage);
+                    id = messageId;
+                } catch (error) {
+                    console.warn("Redis message persistence failed:", error instanceof Error ? error.message : "Unknown Redis error");
+                    socket.emit("message:error", "Your message could not be saved. Please try again.");
+                    return;
+                }
+
+                const chatMessage: ChatMessage = {
+                    id,
+                    username: socket.data.user,
+                    message: message.trim(),
+                    sentAt,
+                };
+                try {
+                    await pub.publish("MESSAGES", JSON.stringify(chatMessage));
+                    console.log("New Message Rec.", id, "user:", socket.data.user);
+                } catch (error) {
+                    console.warn("Redis message publish failed:", error instanceof Error ? error.message : "Unknown Redis error");
+                    io.emit("message", JSON.stringify(chatMessage));
+                    socket.emit("message:error", "Your message was saved, but live delivery may be delayed.");
                 }
             });
         });

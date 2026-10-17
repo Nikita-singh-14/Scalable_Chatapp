@@ -45,11 +45,16 @@ export default function Page() {
     const {
         sendMessage,
         messages,
+        hasOlderMessages,
+        isLoadingHistory,
+        historyError,
+        loadOlderMessages,
         isAuthenticated,
         login,
         logout,
         username,
         error,
+        messageError,
         isConnected,
     } = useSocket();
     const [message, setMessage] = useState('');
@@ -226,7 +231,29 @@ export default function Page() {
                         </div>
                     )}
 
-                    {messages.length === 0 ? (
+                    {historyError && (
+                        <div className={classes.historyError} role="alert">
+                            <span>{historyError}</span>
+                            <button type="button" onClick={() => void loadOlderMessages()} disabled={isLoadingHistory}>
+                                {isLoadingHistory ? 'Loading…' : 'Try again'}
+                            </button>
+                        </div>
+                    )}
+
+                    {hasOlderMessages && (
+                        <button
+                            type="button"
+                            className={classes.loadOlderButton}
+                            onClick={() => void loadOlderMessages()}
+                            disabled={isLoadingHistory}
+                        >
+                            {isLoadingHistory ? 'Loading earlier messages…' : 'Load earlier messages'}
+                        </button>
+                    )}
+
+                    {messages.length === 0 && isLoadingHistory ? (
+                        <p className={classes.historyLoading}>Loading your conversation…</p>
+                    ) : messages.length === 0 && !historyError ? (
                         <div className={classes.emptyState}>
                             <div className={classes.emptyIllustration} aria-hidden="true">
                                 <span className={classes.emptyBubble}>Hello!</span>
@@ -246,7 +273,7 @@ export default function Page() {
 
                                 return (
                                     <article
-                                        key={`${chatMessage.sentAt}-${index}`}
+                                        key={chatMessage.id || `${chatMessage.sentAt}-${index}`}
                                         className={`${classes.messageRow} ${isMine ? classes.ownMessage : ''}`}
                                     >
                                         {!isMine && (
@@ -272,6 +299,7 @@ export default function Page() {
                 </div>
 
                 <div className={classes.composerWrap}>
+                    {messageError && <p className={classes.messageError} role="alert">{messageError}</p>}
                     <form className={classes.composer} onSubmit={handleSend}>
                         <input
                             value={message}

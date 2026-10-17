@@ -503,8 +503,79 @@
     font-size: 10px;
 }
 
+.loadOlderButton {
+    display: block;
+    padding: 8px 13px;
+    margin: 0 auto 18px;
+    border: 1px solid #e7e2f8;
+    border-radius: 18px;
+    background: #faf9ff;
+    color: #7058ca;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 650;
+}
+
+.loadOlderButton:hover:not(:disabled) {
+    background: #f0edff;
+}
+
+.loadOlderButton:disabled {
+    cursor: wait;
+    opacity: 0.7;
+}
+
+.historyError {
+    display: flex;
+    width: fit-content;
+    max-width: 100%;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 13px;
+    margin: 0 auto 16px;
+    border: 1px solid #f1d9d3;
+    border-radius: 12px;
+    background: #fff8f6;
+    color: #9a594d;
+    font-size: 10px;
+}
+
+.historyError button {
+    padding: 4px 7px;
+    border: 0;
+    border-radius: 6px;
+    background: #f8e8e3;
+    color: #874b40;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 650;
+}
+
+.historyError button:disabled {
+    cursor: wait;
+    opacity: 0.7;
+}
+
+.historyLoading {
+    padding: 35px 10px;
+    color: #9290a0;
+    font-size: 12px;
+    text-align: center;
+}
+
 .composerWrap {
     padding: 12px 30px 17px;
+}
+
+.messageError {
+    width: fit-content;
+    padding: 7px 11px;
+    margin: 0 auto 8px;
+    border: 1px solid #f1d9d3;
+    border-radius: 10px;
+    background: #fff8f6;
+    color: #9a594d;
+    font-size: 10px;
 }
 
 .composer {
