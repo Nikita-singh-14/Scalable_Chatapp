@@ -185,38 +185,77 @@ yarn install
 
 ## Environment variables
 
-The server expects Redis connection values in environment variables such as:
+Keep the HTTP server port and Redis port separate. The browser connects to the HTTP server; the server connects to Redis.
+
+Create `apps/server/.env` for the backend:
 
 ```bash
-HOST=your-redis-host
-PORT=6380
-USERNAME=your-username
-PASSWORD=your-password
+API_PORT=8000
+JWT_SECRET=replace-with-a-long-random-secret
+REDIS_HOST=your-redis-host
+REDIS_PORT=6380
+REDIS_USERNAME=your-redis-username
+REDIS_PASSWORD=your-redis-password
+REDIS_TLS=true
 ```
 
-If you are using a local Redis instance, you may need to adjust the connection setup for non-TLS mode. In this project, the Redis connection is currently configured with `tls: {}` in the server code, which is typical for managed Redis services.
+Use the Redis endpoint's host, port, username, and password from your Redis provider. For a local Redis instance, use `REDIS_HOST=localhost`, `REDIS_PORT=6379`, omit `REDIS_USERNAME` and `REDIS_PASSWORD` if local Redis requires no authentication, and set `REDIS_TLS=false`.
+
+Use the `REDIS_`-prefixed names exactly as shown. Generic environment names such as `USERNAME` can already be set by Windows and may override values in `.env`.
+
+If the frontend and backend are not both running on localhost, set `NEXT_PUBLIC_API_URL` for the web app to the backend's base URL, for example `http://localhost:8000`. The browser uses this URL for both login requests and its Socket.IO connection. Restart the Next.js dev server after changing it.
+
+The demo login endpoint currently accepts any non-empty username and password; it does not validate users against a database.
 
 ## Run the app
 
-Start the server:
+Start the server in one terminal:
 
 ```bash
-cd apps/server
-yarn dev
+yarn workspace server dev
 ```
 
-Start the web app:
+Start the web app in a second terminal:
 
 ```bash
-cd apps/web
-yarn dev
+yarn workspace web dev
 ```
 
-Then open:
+Confirm the backend is running by opening `http://localhost:8000/api/health`, then open the web app:
 
 ```text
 http://localhost:3000
 ```
+
+## Deploy to Vercel and Render
+
+Deploy the `apps/web` Next.js app to Vercel and the `apps/server` Socket.IO server to Render. Both services should use the same external Redis instance so messages can be broadcast between server instances.
+
+### Deploy the backend to Render
+
+1. Create a **Web Service** in Render and connect this repository.
+2. Set the **Root Directory** to the repository root (leave it blank if Render treats the repository root as the default).
+3. Choose **Node** and set:
+   - **Build Command:** `yarn install --frozen-lockfile && yarn workspace server build`
+   - **Start Command:** `yarn workspace server start`
+4. Add these environment variables in Render. Use the values from your Redis provider; do not commit credentials:
+   - `JWT_SECRET`: a long, random secret
+   - `REDIS_HOST`, `REDIS_PORT`, `REDIS_USERNAME`, `REDIS_PASSWORD`: your Redis connection details
+   - `REDIS_TLS`: `true` for TLS-enabled managed Redis
+   - `NODE_VERSION`: `22`
+5. Set the Render health check path to `/api/health`, deploy, and copy the service's public HTTPS URL (for example, `https://your-service.onrender.com`).
+
+The server listens on Render's assigned `PORT` automatically. Do not set `PORT` to the Redis port.
+
+### Deploy the frontend to Vercel
+
+1. Import this repository in Vercel and select `apps/web` as the **Root Directory**. Keep the detected Next.js framework and default build settings.
+2. Set the Node.js version to `22` in the project settings.
+3. Add the environment variable `NEXT_PUBLIC_API_URL` with the Render service URL, without a trailing slash (for example, `https://your-service.onrender.com`).
+4. Deploy or redeploy the frontend after setting the variable; `NEXT_PUBLIC_API_URL` is included in the client-side build.
+5. Open the Vercel site, log in, and confirm Socket.IO connects. Check `https://your-service.onrender.com/api/health` if the backend does not respond.
+
+Use the Render URL for `NEXT_PUBLIC_API_URL`, not `localhost`. Keep the Render service running while testing; on plans that spin down while idle, the first connection may take time while it starts.
 
 ## Learn by tracing one message
 

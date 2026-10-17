@@ -4,19 +4,23 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "node dist/index",
+    "start": "node dist/index.js",
     "build": "tsc -p .",
     "dev": "tsc-watch --onSuccess \"node dist/index.js\""
   },
-  "devDependencies": {
-    "@types/express": "^5.0.6",
-    "tsc-watch": "^7.2.0",
-    "typescript": "^6.0.2"
-  },
   "dependencies": {
+    "cors": "^2.8.5",
     "dotenv": "^16.0.3",
     "express": "^5.2.1",
     "ioredis": "^5.10.1",
+    "jsonwebtoken": "^9.0.2",
     "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.5",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.5",
+    "tsc-watch": "^7.2.0",
+    "typescript": "^6.0.2"
   }
 }
