@@ -96,15 +96,20 @@ class SocketService {
                 }
 
                 console.log("New Message Rec.", message);
+                const chatMessage = JSON.stringify({
+                    username: socket.data.user,
+                    message: String(message).trim(),
+                    sentAt: Date.now(),
+                });
 
                 if (pub) {
                     try {
-                        await pub.publish("MESSAGES", JSON.stringify({ message }));
+                        await pub.publish("MESSAGES", chatMessage);
                     } catch (error) {
                         console.warn("Redis message publish failed:", error instanceof Error ? error.message : "Unknown Redis error");
                     }
                 } else {
-                    io.emit("message", JSON.stringify({ message }));
+                    io.emit("message", chatMessage);
                 }
             });
         });
