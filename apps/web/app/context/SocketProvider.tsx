@@ -41,7 +41,7 @@ function parseChatMessage(value: unknown): ChatMessage | null {
     if (typeof message.message !== 'string') return null;
 
     return {
-        username: typeof message.username === 'string' ? message.username : 'Someone',
+        username: typeof message.username === 'string' ? message.username : 'Unknown sender',
         message: message.message,
         sentAt: typeof message.sentAt === 'number' && Number.isFinite(message.sentAt)
             ? message.sentAt

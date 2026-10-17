@@ -475,15 +475,11 @@
 }
 
 .ownMessage {
-    align-self: flex-end;
+    align-self: flex-start;
 }
 
 .ownMessage .messageContent {
     align-items: flex-end;
-}
-
-.ownMessage .messageMeta {
-    flex-direction: row-reverse;
 }
 
 .ownMessage .messageBubble {

@@ -242,7 +242,7 @@ export default function Page() {
                             <div className={classes.dayDivider}><span>THE CONVERSATION</span></div>
                             {messages.map((chatMessage, index) => {
                                 const isMine = chatMessage.username === username;
-                                const sender = isMine ? 'You' : chatMessage.username || 'Someone';
+                                const sender = chatMessage.username || 'Unknown sender';
 
                                 return (
                                     <article
